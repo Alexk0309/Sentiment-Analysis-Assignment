@@ -50,7 +50,7 @@ review_sentiment <- cbind(Airline$text, d)
 print(review_sentiment)
 
 #barplot for sentiments
-barplot(colSums(d), col = rainbow(10), ylab = 'count', main = 'Sentiment Scores for Airline Reviews')
+barplot(colSums(d), las = 2, col = rainbow(10), ylab = 'count', main = 'Sentiment Scores for Airline Reviews')
 
 
 # pdf(file = "Airline_text_analysis.pdf", width=20, height=20)
