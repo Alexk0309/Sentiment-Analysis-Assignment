@@ -2,13 +2,31 @@ library(SentimentAnalysis)
 library(syuzhet)
 library(ggplot2)
 library(dplyr)
+library(tm)
+library(SnowballC)
+library(wordcloud)
+library(RColorBrewer)
+library(ggplot2)
+
 
 
 #reading dataset
 AirlineDataset <- read.csv('Airline-Sentiment-2-w-AA.csv')
 
 #Extracting the main data that will be used for analysis 
-Airline <- data.frame(airline_name = AirlineDataset$airline, airline_sentiment = AirlineDataset$airline_sentiment, negative_reason = AirlineDataset$negativereason, text = AirlineDataset$text)
+Airline <- data.frame(airline_name = AirlineDataset$airline, airline_sentiment = AirlineDataset$airline_sentiment, negative_reason = AirlineDataset$negativereason, text = AirlineDataset$text, tweets_created = AirlineDataset$tweet_created)
+
+
+#========== Visualising Original sentiment data provided =============
+
+ValuesOriginal <- c("Negative","Neutral","Positive")
+
+OriginalSentiment <- data.frame(ValuesOriginal, table(Airline$airline_sentiment))
+
+# Pie chart for original data
+piepercentoriginal<- round(100*OriginalSentiment$Freq/sum(OriginalSentiment$Freq), 1)
+pie(OriginalSentiment$Freq, labels = paste0(piepercentoriginal, "%"), main="Tweet Sentiment Percentages for original dataset", col = rainbow(length(OriginalSentiment$Var1)))
+legend("topright", OriginalSentiment$ValuesOriginal , fill = rainbow(length(OriginalSentiment$Var1)))
 
 
 
@@ -20,28 +38,24 @@ barplot(AllAirlines$Freq, names.arg=AllAirlines$airline_name, xlab="Airlines",
         ylab="Frequency", ylim = c(0,4000), col="green", border="black", main = "Top 6 Major Airlines Discussed")
 
 
-
-#========== Original sentiment data provided =============
-
-ValuesOriginal <- c("Negative","Neutral","Positive")
-
-OriginalSentiment <- data.frame(ValuesOriginal, table(Airline$airline_sentiment))
-
-
-# Pie chart for original data
-piepercentoriginal<- round(100*OriginalSentiment$Freq/sum(OriginalSentiment$Freq), 1)
-pie(OriginalSentiment$Freq, labels = paste0(piepercentoriginal, "%"), main="Tweet Sentiment Percentages for original dataset", col = rainbow(length(OriginalSentiment$Var1)))
-legend("topright", OriginalSentiment$ValuesOriginal , fill = rainbow(length(OriginalSentiment$Var1)))
-
-
-
 #========== negative reasons data provided =============
 
 NegativeReasons <- data.frame(table(Airline$negative_reason))
 
+#Removing empty responses
+NegativeReasons = NegativeReasons[-1,]
+
+# Plotting top 5 negative Reasons
+
+print(top_n(NegativeReasons, n=5, Freq) %>%
+        ggplot(., aes(x=Var1, y=Freq))+
+        geom_bar(stat='identity', color = "black", fill = "lightgreen") +
+        ylab("Frequency") +
+        xlab("Negative Reason") +
+        ggtitle("Top 5 Negative Reasons for Airlines"))
 
 
-#============== Data cleaning for Analysis ===============
+#============== Data cleaning the tweets for Analysis ===============
 
 #Removes the @fightname
 Airline$text <- gsub("@\\w+", "", Airline$text)
@@ -68,19 +82,7 @@ tweets <- iconv(tweets,"WINDOWS-1252","UTF-8")
 
 
 
-#=========Splitting data based on airline==========
-
-VirginAmerica <- Airline[grep("Virgin America", Airline$airline_name), ]
-United <- Airline[grep("United", Airline$airline_name), ]
-Delta <- Airline[grep("Delta", Airline$airline_name), ]
-Southwest <- Airline[grep("Southwest", Airline$airline_name), ]
-USAirways <- Airline[grep("US Airways", Airline$airline_name), ]
-American<- Airline[grep("American", Airline$airline_name), ]
-
-
-
-
-#==================== Sentiment analysis using sentiment analysis package==========================
+# #==================== Sentiment analysis using sentiment analysis package==========================
 
 sentiment <- analyzeSentiment(tweets)
 sentiment_vector <- sentiment$SentimentQDAP
@@ -97,12 +99,12 @@ bing_vector <- get_sentiment(tweets, method="bing")
 #affin method
 afinn_vector <- get_sentiment(tweets, method="afinn")
 
-
 #Appending everything to a dataframe to see the values
 calculation <- data.frame(tweets, afinn_vector, bing_vector, syuzhet_vector, sentiment_vector)
 
 
-#Grouping up data for comparison
+
+# Grouping up data based on negative/neutral/positive for comparison
 
 neutral_bing <- length(which(calculation$bing_vector == 0))
 positive_bing <- length(which(calculation$bing_vector > 0))
@@ -129,7 +131,6 @@ Count_sent <- c(positive_sent,neutral_sent,negative_sent)
 
 Values <- c("Positive","Neutral","Negative")
 output <- data.frame(Values,Count_syuzhet, Count_afinn, Count_bing, Count_sent)
-
 
 
 
@@ -160,89 +161,97 @@ legend("topright", output$Values, fill = rainbow(length(output$Values)))
 
 
 
-# # =============================== NRC analysis ================
-# Code gets really laggy so its commented uncomment, wait and see result
-# 
-# # d <- get_nrc_sentiment(tweets)
-# # 
-# # #transpose
-# # td <-data.frame(t(d))
-# # 
-# # #The function rowSums computes column sums across rows for each level of a grouping variable.
-# # nrc <- data.frame(rowSums(td))
-# # 
-# # #Transformation and cleaning the table
-# # names(nrc)[1] <- "count"
-# # nrc <- cbind("sentiment" = rownames(nrc), nrc)
-# # rownames(nrc) <- NULL
-# # 
-# # 
-# # #Plot One - count of words associated with each sentiment
-# # qp <- quickplot(sentiment, data=nrc, weight=count, geom="bar", fill=sentiment, ylab="count")+ggtitle("Survey sentiments")
-# # print(qp)
-# # 
-# # 
-# # #Plot 2 - count of words associated with each sentiment, expressed as a percentage
-# # bp <- barplot(
-# #   sort(colSums(prop.table(d))),
-# #   xlim = c(0,0.25),
-# #   horiz = TRUE,
-# #   las = 1,
-# #   main = "Emotions in Text", xlab="Percentage"
-# # )
-# # 
-# # print(bp)
+# =============================== NRC analysis for emotions ================
+#Reference Used from lecture
+#Code gets really laggy so its commented 
+# d <- get_nrc_sentiment(tweets)
+#
+# #transpose
+# td <-data.frame(t(d))
+#
+# #The function rowSums computes column sums across rows for each level of a grouping variable.
+# nrc <- data.frame(rowSums(td))
+#
+# #Transformation and cleaning the table
+# names(nrc)[1] <- "count"
+# nrc <- cbind("sentiment" = rownames(nrc), nrc)
+# rownames(nrc) <- NULL
+#
+#
+# #Plot One - count of words associated with each sentiment
+# qp <- quickplot(sentiment, data=nrc, weight=count, geom="bar", fill=sentiment, ylab="count")+ggtitle("Survey sentiments")
+# print(qp)
+#
+#
+# #Plot 2 - count of words associated with each sentiment, expressed as a percentage
+# bp <- barplot(
+#   sort(colSums(prop.table(d))),
+#   xlim = c(0,0.25),
+#   horiz = TRUE,
+#   las = 1,
+#   main = "Emotions in Text", xlab="Percentage"
+# )
+#
+# print(bp)
+
+#Appending the Syuzhet method data into the data frame 
+Airline$calculated_sentiment <- syuzhet_vector
+
+
+#Histogram for syuzhet sentiment score
+print(Airline %>%
+        ggplot(aes(x=calculated_sentiment)) +
+        geom_histogram(binwidth = 1, color = "black", fill = "green")+
+        ylab("Frequency") +
+        xlab("sentiment score") +
+        ggtitle("Distribution of Sentiment scores of the tweets"))
 
 
 
+#=========Splitting data based on airline==========
 
-syuzhet_American <- get_sentiment(American$text, method="syuzhet")
-
-syuzhet_Delta <- get_sentiment(Delta$text, method="syuzhet")
-
-syuzhet_Southwest <- get_sentiment(Southwest$text, method="syuzhet")
-
-syuzhet_United <- get_sentiment(United$text, method="syuzhet")
-
-syuzhet_UsAirways <- get_sentiment(USAirways$text, method="syuzhet")
-
-syuzhet_VirginAmerica <- get_sentiment(VirginAmerica$text, method="syuzhet")
+VirginAmerica <- Airline[grep("Virgin America", Airline$airline_name), ]
+United <- Airline[grep("United", Airline$airline_name), ]
+Delta <- Airline[grep("Delta", Airline$airline_name), ]
+Southwest <- Airline[grep("Southwest", Airline$airline_name), ]
+USAirways <- Airline[grep("US Airways", Airline$airline_name), ]
+American<- Airline[grep("American", Airline$airline_name), ]
 
 
-neutral_American <- length(which(syuzhet_American == 0))
-positive_American <- length(which(syuzhet_American > 0))
-negative_American <- length(which(syuzhet_American < 0))
+neutral_American <- length(which(American$calculated_sentiment == 0))
+positive_American <- length(which(American$calculated_sentiment > 0))
+negative_American <- length(which(American$calculated_sentiment < 0))
 Count_American <- c(positive_American,neutral_American,negative_American)
 
-neutral_Delta <- length(which(syuzhet_Delta == 0))
-positive_Delta <- length(which(syuzhet_Delta > 0))
-negative_Delta <- length(which(syuzhet_Delta < 0))
+neutral_Delta <- length(which(Delta$calculated_sentiment == 0))
+positive_Delta <- length(which(Delta$calculated_sentiment > 0))
+negative_Delta <- length(which(Delta$calculated_sentiment < 0))
 Count_Delta <- c(positive_Delta,neutral_Delta,negative_Delta)
 
-neutral_Southwest <- length(which(syuzhet_Southwest == 0))
-positive_Southwest <- length(which(syuzhet_Southwest > 0))
-negative_Southwest <- length(which(syuzhet_Southwest < 0))
+neutral_Southwest <- length(which(Southwest$calculated_sentiment == 0))
+positive_Southwest <- length(which(Southwest$calculated_sentiment > 0))
+negative_Southwest <- length(which(Southwest$calculated_sentiment < 0))
 Count_Southwest <- c(positive_Southwest,neutral_Southwest,negative_Southwest)
 
-neutral_United <- length(which(syuzhet_United == 0))
-positive_United <- length(which(syuzhet_United > 0))
-negative_United <- length(which(syuzhet_United < 0))
+neutral_United <- length(which(United$calculated_sentiment == 0))
+positive_United <- length(which(United$calculated_sentiment > 0))
+negative_United <- length(which(United$calculated_sentiment < 0))
 Count_United <- c(positive_United,neutral_United,negative_United)
 
-neutral_UsAirways <- length(which(syuzhet_UsAirways == 0))
-positive_UsAirways <- length(which(syuzhet_UsAirways > 0))
-negative_UsAirways <- length(which(syuzhet_UsAirways < 0))
+neutral_UsAirways <- length(which(USAirways$calculated_sentiment == 0))
+positive_UsAirways <- length(which(USAirways$calculated_sentiment > 0))
+negative_UsAirways <- length(which(USAirways$calculated_sentiment < 0))
 Count_UsAirways <- c(positive_UsAirways,neutral_UsAirways,negative_UsAirways)
 
-
-neutral_VirginAmerica <- length(which(syuzhet_VirginAmerica == 0))
-positive_VirginAmerica <- length(which(syuzhet_VirginAmerica > 0))
-negative_VirginAmerica <- length(which(syuzhet_VirginAmerica < 0))
+neutral_VirginAmerica <- length(which(VirginAmerica$calculated_sentiment == 0))
+positive_VirginAmerica <- length(which(VirginAmerica$calculated_sentiment > 0))
+negative_VirginAmerica <- length(which(VirginAmerica$calculated_sentiment < 0))
 Count_VirginAmerica <- c(positive_VirginAmerica,neutral_VirginAmerica,negative_VirginAmerica)
 
 
 values_airlines <- c("Positive","Neutral","Negative")
 output_airlines <- data.frame(values_airlines,Count_American, Count_Delta, Count_Southwest, Count_United, Count_UsAirways, Count_VirginAmerica)
+
 
 
 piepercentAmerican<- round(100*output_airlines$Count_American/sum(output_airlines$Count_American), 1)
@@ -269,61 +278,21 @@ piepercentVirginAmerica<- round(100*output_airlines$Count_VirginAmerica/sum(outp
 pie(output_airlines$Count_VirginAmerica, labels = paste0(piepercentVirginAmerica, "%"), main="Sentiment percentages for VirginAmerica Airlines", col = rainbow(length(output_airlines$values_airlines)))
 legend("topright", output_airlines$values_airlines, fill = rainbow(length(output_airlines$values_airlines)))
 
-
 syuzhet_NegativeReason <- get_sentiment(American$negative_reason, method="syuzhet")
 
-print(summary(syuzhet_NegativeReason))
 
 
+#========================== Text Analysis ======================
 
-
-
-
-
-
-
-# 
-# 
-library("tm")
-library("SnowballC")
-library("wordcloud")
-library("RColorBrewer")
-library("ggplot2")
-# 
-# 
-# #========================== Text Analysis ======================
-# 
-# 
-# 
-# #Replace all uppercase with lowercase letters
-# Airline$text <- tolower(Airline$text)
-# 
-# # Note : Already using cleaned data
-# 
-# #
-# WordC <- removeWords(Airline$text, stopwords("english"))
-# 
-# 
-# pdf(file = "testing.pdf", width = 8.5, height = 8.5)
-# set.seed(1234)
-# wordcloud(WordC, min.freq = 5,
-#           max.words = 150,
-#           random.order = FALSE,
-#           random.color = FALSE,
-#           rot.per = 0.0,
-#           colors = "black",
-#           ordered.colors = FALSE,
-#           use.r.layout = FALSE,
-#           fixed.asp = TRUE)
-# dev.off()
-
-
+# Note : We are already using Cleaned Data
 #Testing with corpus for general text analysis for all airlines
 
+#Creating a corpus for tweets cleaned
 airlines_wordcloud <- Corpus(VectorSource(Airline$text))
 
 #Remove stop words
 airlines_wordcloud <- tm_map(airlines_wordcloud, removeWords, stopwords("english"))
+
 #Remove Custom stop words
 airlines_wordcloud <- tm_map(airlines_wordcloud, removeWords, c("flight", "flights", "can", "now", "will", "get"))
 
@@ -335,7 +304,7 @@ airlines_wordcloud_m <- as.matrix(airlines_wordcloud_dtm)
 airlines_wordcloud_dtm_v <- sort(rowSums(airlines_wordcloud_m),decreasing=TRUE)
 airlines_wordcloud_dtm_d <- data.frame(word = names(airlines_wordcloud_dtm_v),freq=airlines_wordcloud_dtm_v)
 
-
+#Plotting bar graph to see top 10 most used words in tweets
 barplot(airlines_wordcloud_dtm_d[1:10,]$freq, names.arg = airlines_wordcloud_dtm_d[1:10,]$word,
         col ="lightgreen", main ="Top 10 most frequent words within tweets about all airlines",
         ylab = "Word frequencies",  ylim = c(0,1400))
@@ -349,7 +318,7 @@ wordcloud(words = airlines_wordcloud_dtm_d$word, freq = airlines_wordcloud_dtm_d
 
 
 
-#Wordcloud for United airlines
+#Wordcloud for tweets about United airlines
 
 united_wc <- Corpus(VectorSource(United$text))
 
@@ -366,7 +335,7 @@ united_wc_m <- as.matrix(united_wc_dtm)
 united_wc_dtm_v <- sort(rowSums(united_wc_m),decreasing=TRUE)
 united_wc_dtm_d <- data.frame(word = names(united_wc_dtm_v),freq=united_wc_dtm_v)
 
-
+#Plotting bar graph for top 10 most used words in tweets towards United Airlines
 barplot(united_wc_dtm_d[1:10,]$freq, names.arg = united_wc_dtm_d[1:10,]$word,
         col ="lightgreen", main ="Top 10 most frequent words within tweets about Uunited Airlines",
         ylab = "Word frequencies",  ylim = c(0,400))
@@ -378,7 +347,9 @@ wordcloud(words = united_wc_dtm_d$word, freq = united_wc_dtm_d$freq, min.freq = 
           colors=brewer.pal(8, "Dark2"))
 
 
-#Wordcloud for USAirwyas airlines
+
+#Wordcloud for tweets about USAirways
+
 
 USAirways_wc <- Corpus(VectorSource(USAirways$text))
 
@@ -395,7 +366,7 @@ USAirways_wc_m <- as.matrix(USAirways_wc_dtm)
 USAirways_wc_dtm_v <- sort(rowSums(USAirways_wc_m),decreasing=TRUE)
 USAirways_wc_dtm_d <- data.frame(word = names(USAirways_wc_dtm_v),freq=USAirways_wc_dtm_v)
 
-
+#Plotting bar graph for top 10 most used words in tweets towards USAirways
 barplot(USAirways_wc_dtm_d[1:10,]$freq, names.arg = USAirways_wc_dtm_d[1:10,]$word,
         col ="lightgreen", main ="Top 10 most frequent words within tweets about USAirways Airlines",
         ylab = "Word frequencies", ylim = c(0,400))
@@ -409,7 +380,8 @@ wordcloud(words = USAirways_wc_dtm_d$word, freq = USAirways_wc_dtm_d$freq, min.f
 
 
 
-#Wordcloud for American airlines
+#Wordcloud for tweets about American Airlines
+
 
 American_wc <- Corpus(VectorSource(American$text))
 
@@ -426,7 +398,7 @@ American_wc_m <- as.matrix(American_wc_dtm)
 American_wc_dtm_v <- sort(rowSums(American_wc_m),decreasing=TRUE)
 American_wc_dtm_d <- data.frame(word = names(American_wc_dtm_v),freq=American_wc_dtm_v)
 
-
+#Plotting bar graph for top 10 most used words in tweets towards American Airlines
 barplot(American_wc_dtm_d[1:10,]$freq, names.arg = American_wc_dtm_d[1:10,]$word,
         col ="lightgreen", main ="Top 10 most frequent words within tweets about American Airlines",
         ylab = "Word frequencies", ylim = c(0,400))
@@ -436,131 +408,3 @@ set.seed(1234)
 wordcloud(words = American_wc_dtm_d$word, freq = American_wc_dtm_d$freq, min.freq = 5,
           max.words=100, random.order=FALSE, rot.per=0.40,
           colors=brewer.pal(8, "Dark2"))
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# 
-# #======== Extra ignore for now ============
-# 
-# # 
-# # 
-# # #---------------------- Checking if there is a difference for cleaned data -----------------#
-# # 
-# # # using sentiment analysis package
-# # 
-# # sentiment2 <- analyzeSentiment(tweetsCleaned)
-# # sentiment_vector2 <- sentiment2$SentimentQDAP
-# # SentimentDirection2 <- convertToDirection(sentiment2$SentimentQDAP)
-# # 
-# # 
-# # # Syuzhet
-# # syuzhet_vector2 <- get_sentiment(tweetsCleaned, method="syuzhet")
-# # 
-# # # bing
-# # bing_vector2 <- get_sentiment(tweetsCleaned, method="bing")
-# # 
-# # #affin
-# # afinn_vector2 <- get_sentiment(tweetsCleaned, method="afinn")
-# # 
-# # 
-# # #Appending everything to a dataframe to see the values
-# # calculation2 <- data.frame(tweetsCleaned, afinn_vector2, bing_vector2, syuzhet_vector2, sentiment_vector2)
-# # 
-# # 
-# # #Grouping up data for comparison
-# # 
-# # neutral_bing2 <- length(which(calculation2$bing_vector2 == 0))
-# # positive_bing2 <- length(which(calculation2$bing_vector2 > 0))
-# # negative_bing2 <- length(which(calculation2$bing_vector2 < 0))
-# # Count_bing2 <- c(positive_bing2,neutral_bing2,negative_bing2)
-# # 
-# # 
-# # neutral_afinn2 <- length(which(calculation2$afinn_vector2 == 0))
-# # positive_afinn2 <- length(which(calculation2$afinn_vector2 > 0))
-# # negative_afinn2 <- length(which(calculation2$afinn_vector2 < 0))
-# # Count_afinn2 <- c(positive_afinn2,neutral_afinn2,negative_afinn2)
-# # 
-# # 
-# # neutral_syuzhet2 <- length(which(calculation2$syuzhet_vector2 == 0))
-# # positive_syuzhet2 <- length(which(calculation2$syuzhet_vector2 > 0))
-# # negative_syuzhet2 <- length(which(calculation2$syuzhet_vector2 < 0))
-# # Count_syuzhet2 <- c(positive_syuzhet2,neutral_syuzhet2,negative_syuzhet2)
-# # 
-# # neutral_sent2 <- length(which(calculation2$sentiment_vector2 == 0))
-# # positive_sent2 <- length(which(calculation2$sentiment_vector2 > 0))
-# # negative_sent2 <- length(which(calculation2$sentiment_vector2 < 0))
-# # Count_sent2 <- c(positive_sent2,neutral_sent2,negative_sent2)
-# # 
-# # 
-# # Values2 <- c("Positive","Neutral","Negative")
-# # output2 <- data.frame(Values2,Count_syuzhet2, Count_afinn2, Count_bing2, Count_sent2)
-# # 
-# 
-
-
-
-
-
-
-
-
-# Try when got more time 
-# http://www.tabvizexplorer.com/sentiment-analysis-using-r-and-twitter/
-
-
-# Create comparison word cloud data
-# wordcloud_forsentiment = c(
-#   paste(tweets.df$text[emotions$anger > 0], collapse=" "),
-#   paste(tweets.df$text[emotions$anticipation > 0], collapse=" "),
-#   paste(tweets.df$text[emotions$disgust > 0], collapse=" "),
-#   paste(tweets.df$text[emotions$fear > 0], collapse=" "),
-#   paste(tweets.df$text[emotions$joy > 0], collapse=" "),
-#   paste(tweets.df$text[emotions$sadness > 0], collapse=" "),
-#   paste(tweets.df$text[emotions$surprise > 0], collapse=" "),
-#   paste(tweets.df$text[emotions$trust > 0], collapse=" ")
-# )
-# 
-# # create corpus
-# corpus = Corpus(VectorSource(wordcloud_tweet))
-# 
-# # remove punctuation, convert every word in lower case and remove stop words
-# 
-# corpus = tm_map(corpus, tolower)
-# corpus = tm_map(corpus, removePunctuation)
-# corpus = tm_map(corpus, removeWords, c(stopwords("english")))
-# corpus = tm_map(corpus, stemDocument)
-# 
-# # create document term matrix
-# 
-# tdm = TermDocumentMatrix(corpus)
-# 
-# # convert as matrix
-# tdm = as.matrix(tdm)
-# tdmnew <- tdm[nchar(rownames(tdm)) < 11,]
-# 
-# # column name binding
-# colnames(tdm) = c('anger', 'anticipation', 'disgust', 'fear', 'joy', 'sadness', 'surprise', 'trust')
-# colnames(tdmnew) <- colnames(tdm)
-# comparison.cloud(tdmnew, random.order=FALSE,
-#                  colors = c("#00B2FF", "red", "#FF0099", "#6600CC", "green", "orange", "blue", "brown"),
-#                  title.size=1, max.words=250, scale=c(2.5, 0.4),rot.per=0.4)
-
